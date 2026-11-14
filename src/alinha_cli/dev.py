@@ -75,12 +75,17 @@ def _pump(name: str, stream, emit: Emit) -> None:
 def _signal_group(pid: int, signum: signal.Signals) -> None:
     try:
         os.killpg(pid, signum)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
+        # PermissionError: on macOS a group left with only an unreaped zombie gives EPERM.
         pass
 
 
 def _stop(running: list[subprocess.Popen[str]]) -> None:
-    """Stops whole process groups, so children such as the Spring JVM do not survive."""
+    """Stops each app's process group (e.g. `pnpm` and Vite).
+
+    The `bootRun` JVM is not in the `gradlew` group: it runs under the Gradle daemon,
+    which cancels the build when the `gradlew` client goes away.
+    """
     for process in running:
         _signal_group(process.pid, signal.SIGTERM)
     deadline = time.monotonic() + STOP_TIMEOUT_SECONDS
@@ -101,6 +106,7 @@ def _start(proc: Proc) -> subprocess.Popen[str]:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        errors="replace",  # one non-UTF-8 byte must not kill the pump and block the app
         bufsize=1,
         start_new_session=True,
     )
@@ -114,6 +120,17 @@ def _wait_for_first_exit(running: list[subprocess.Popen[str]]) -> int:
         time.sleep(POLL_SECONDS)
 
 
+class _Terminated(Exception):
+    pass
+
+
+def _raise_terminated(signum: int, _frame: object) -> None:
+    raise _Terminated(signum)
+
+
+STOP_SIGNALS = (signal.SIGTERM, signal.SIGHUP)
+
+
 def supervise(procs: list[Proc], emit: Emit) -> int:
     """Runs all processes until one exits or Ctrl-C, then stops the rest."""
     lock = threading.Lock()
@@ -123,6 +140,9 @@ def supervise(procs: list[Proc], emit: Emit) -> int:
             emit(line)
 
     running: list[subprocess.Popen[str]] = []
+    # The apps run in their own sessions, so they do not get the terminal's signals.
+    # Turn SIGTERM/SIGHUP into an exception so that `finally` stops them.
+    previous = {signum: signal.signal(signum, _raise_terminated) for signum in STOP_SIGNALS}
     try:
         for proc in procs:
             process = _start(proc)
@@ -136,5 +156,9 @@ def supervise(procs: list[Proc], emit: Emit) -> int:
         return EXIT_NOT_FOUND
     except KeyboardInterrupt:
         return EXIT_INTERRUPTED
+    except _Terminated as terminated:
+        return 128 + terminated.args[0]
     finally:
         _stop(running)
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)

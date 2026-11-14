@@ -214,7 +214,7 @@ If the installed CLI is outside that range, every command that needs the checkou
 
 **Readiness.** `docker compose up --wait` waits for a service's healthcheck when it has one. A service without a healthcheck counts as ready as soon as it has started.
 
-**Process supervision.** `alinha dev` starts each app in its own process group and signals the whole group when stopping, so child processes stop with their parent.
+**Process supervision.** `alinha dev` starts each app in its own process group and signals the whole group when stopping (Ctrl-C, SIGTERM or SIGHUP, e.g. closing the terminal). The `bootRun` JVM runs under the Gradle daemon instead; Gradle stops it when the `gradlew` client goes away.
 
 ### Code layout
 
