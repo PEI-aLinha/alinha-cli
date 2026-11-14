@@ -59,3 +59,12 @@ def test_submodule_without_committed_pointer_has_unknown_drift(
     git(project, "submodule", "add", str(other), "plugins/feature/other")  # staged, not committed
     status = next(s for s in plugin_statuses(project) if s.name == "feature/other")
     assert (status.ahead, status.behind) == (None, None)
+
+
+def test_failed_fetch_is_reported_per_plugin_and_keeps_the_rest(project: Path) -> None:
+    path = project / "plugins/feature/demo"
+    git(path, "remote", "set-url", "origin", str(project / "does-not-exist"))
+    status = plugin_statuses(project, fetch=True)[0]
+    assert status.fetch_error
+    assert (status.ahead, status.behind) == (0, 0)
+    assert status.on_main  # from the last fetched origin/main

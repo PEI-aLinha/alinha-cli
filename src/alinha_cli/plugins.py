@@ -16,6 +16,7 @@ class PluginStatus:
     ahead: int | None = None
     behind: int | None = None
     on_main: bool = False
+    fetch_error: str | None = None
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -34,10 +35,12 @@ def _drift(plugin: Plugin, pointer: str) -> tuple[int | None, int | None]:
 def _status(root: Path, plugin: Plugin, fetch: bool) -> PluginStatus:
     if not (plugin.path / ".git").exists():
         return PluginStatus(plugin.name, initialized=False)
+    fetch_error = None
     if fetch:
         fetched = _git(plugin.path, "fetch", "-q", "origin", "main")
         if fetched.returncode != 0:
-            raise RuntimeError(f"Could not fetch {plugin.name}: {fetched.stderr.strip()}")
+            # Keep going: the other plugins still get a line, this one uses the last fetch.
+            fetch_error = f"Could not fetch {plugin.name}: {fetched.stderr.strip()}"
     relative = plugin.path.relative_to(root).as_posix()
     pointer = _git(root, "rev-parse", f"HEAD:{relative}")
     # Not committed in the main repo yet: there is no pointer to compare with.
@@ -53,6 +56,7 @@ def _status(root: Path, plugin: Plugin, fetch: bool) -> PluginStatus:
         ahead=ahead,
         behind=behind,
         on_main=on_main.returncode == 0,
+        fetch_error=fetch_error,
     )
 
 

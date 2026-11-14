@@ -63,7 +63,8 @@ def _format_status(status: PluginStatus) -> str:
     drift = "?" if status.ahead is None else f"+{status.ahead}/-{status.behind}"
     state = "dirty" if status.dirty else "clean"
     main_state = "on main" if status.on_main else "NOT on main"
-    return f"{status.name:<30} {status.branch:<24} {state:<6} {drift:<8} {main_state}"
+    stale = " (fetch failed)" if status.fetch_error else ""
+    return f"{status.name:<30} {status.branch:<24} {state:<6} {drift:<8} {main_state}{stale}"
 
 
 @plugins_app.command("status")
@@ -71,14 +72,13 @@ def plugins_status(
     fetch: bool = typer.Option(False, "--fetch", help="Fetch origin/main first."),
 ) -> None:
     """Show branch, local changes and drift from the main repo's pointer."""
-    root = _root()
-    try:
-        statuses = plugin_statuses(root, fetch=fetch)
-    except RuntimeError as error:
-        raise _fail(str(error)) from error
+    statuses = plugin_statuses(_root(), fetch=fetch)
     typer.echo(f"{'PLUGIN':<30} {'BRANCH':<24} {'STATE':<6} {'POINTER':<8} MAIN")
     for status in statuses:
         typer.echo(_format_status(status))
+    errors = [status.fetch_error for status in statuses if status.fetch_error]
+    if errors:
+        raise _fail("\n".join(errors))
 
 
 def _print_check(check: Check) -> None:

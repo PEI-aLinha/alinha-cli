@@ -134,7 +134,7 @@ alinha plugins status --fetch
 
 | Option | Effect |
 |---|---|
-| `--fetch` | Runs `git fetch origin main` in each plugin first. Without it, `MAIN` uses the last fetched `origin/main`. |
+| `--fetch` | Runs `git fetch origin main` in each plugin first. Without it, `MAIN` uses the last fetched `origin/main`. If a fetch fails, that plugin's line ends with `(fetch failed)` and uses the last fetched `origin/main`. The errors are printed after the table and the command exits with `1`. |
 
 Example output:
 

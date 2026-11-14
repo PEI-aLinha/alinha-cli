@@ -34,6 +34,20 @@ def test_plugins_status_prints_each_plugin(project: Path, monkeypatch: pytest.Mo
     assert "feature/demo" in result.output
 
 
+def test_plugins_status_shows_the_table_when_a_fetch_fails(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from conftest import git
+
+    git(project / "plugins/feature/demo", "remote", "set-url", "origin", str(project / "nope"))
+    monkeypatch.chdir(project)
+    result = runner.invoke(app, ["plugins", "status", "--fetch"])
+    assert result.exit_code == 1
+    assert "feature/demo" in result.output
+    assert "fetch failed" in result.output
+    assert "Could not fetch feature/demo" in result.output
+
+
 def test_doctor_fails_when_a_check_fails(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from alinha_cli import cli
     from alinha_cli.doctor import FAIL, OK, Check
