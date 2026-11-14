@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from alinha_cli.project import (
+    VERSION_FILE,
     IncompatibleVersion,
     ProjectNotFound,
     check_cli_version,
@@ -39,4 +40,10 @@ def test_version_check_passes_inside_range(project: Path) -> None:
 def test_version_check_rejects_version_outside_range(project: Path) -> None:
     (project / ".alinha-cli-version").write_text(">=0.2.0,<0.3.0\n")
     with pytest.raises(IncompatibleVersion, match="uv tool install"):
+        check_cli_version(project, "0.1.0")
+
+
+def test_unreadable_pin_file_is_an_incompatible_version(project: Path) -> None:
+    (project / VERSION_FILE).write_bytes(b"\xff>=0.1\n")
+    with pytest.raises(IncompatibleVersion, match="Could not read"):
         check_cli_version(project, "0.1.0")

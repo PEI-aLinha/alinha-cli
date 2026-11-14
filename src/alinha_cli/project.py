@@ -52,7 +52,10 @@ def check_cli_version(root: Path, version: str) -> None:
     pin_file = root / VERSION_FILE
     if not pin_file.is_file():
         return
-    raw = pin_file.read_text().strip()
+    try:
+        raw = pin_file.read_text().strip()
+    except (OSError, UnicodeDecodeError) as error:
+        raise IncompatibleVersion(f"Could not read {VERSION_FILE}: {error}") from error
     try:
         supported = SpecifierSet(raw)
     except InvalidSpecifier as error:
