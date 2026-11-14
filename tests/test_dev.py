@@ -3,7 +3,10 @@ import sys
 import time
 from pathlib import Path
 
-from alinha_cli.dev import Proc, app_processes, partition_services, supervise
+import pytest
+
+from alinha_cli.dev import DependencyError, Proc, app_processes, partition_services, supervise
+from alinha_cli.project import COMPOSE_FILE
 
 
 def py(code: str) -> list[str]:
@@ -22,6 +25,18 @@ def test_one_shot_services_are_separated(project: Path) -> None:
     long_running, one_shot = partition_services(project)
     assert long_running == ["postgres", "openbao"]
     assert one_shot == ["openbao-init"]
+
+
+def test_service_without_body_is_long_running(project: Path) -> None:
+    (project / COMPOSE_FILE).write_text("services:\n  postgres:\n  init:\n    restart: 'no'\n")
+    assert partition_services(project) == (["postgres"], ["init"])
+
+
+@pytest.mark.parametrize("content", ["name: x\n", "services: [\n", "services: []\n"])
+def test_unreadable_compose_file_is_a_dependency_error(project: Path, content: str) -> None:
+    (project / COMPOSE_FILE).write_text(content)
+    with pytest.raises(DependencyError, match="services"):
+        partition_services(project)
 
 
 def test_backend_receives_the_dev_token(project: Path) -> None:
