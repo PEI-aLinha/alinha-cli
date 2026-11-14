@@ -28,6 +28,15 @@ def test_java_version_is_read_from_stderr() -> None:
     assert check_tool("JDK", ["java", "-version"], 21, run).level == OK
 
 
+def test_ga_java_version_without_minor_is_read() -> None:
+    run = runner(
+        stderr='openjdk version "21" 2023-09-19\nOpenJDK 64-Bit Server VM (build 21+35-2513)'
+    )
+    result = check_tool("JDK", ["java", "-version"], 21, run)
+    assert result.level == OK
+    assert result.detail == "21"
+
+
 def test_wrong_major_version_fails_with_found_version() -> None:
     result = check_tool("Node", ["node", "--version"], 22, runner(stdout="v20.1.0"))
     assert result.level == FAIL

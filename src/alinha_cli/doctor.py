@@ -17,6 +17,8 @@ PORTS = (5432, 6379, 8180, 8200, 8080, 5173)
 BAO_SECRET_URL = "http://localhost:8200/v1/secret/data/alinha/app"
 BAO_DEV_TOKEN = "dev-app-token"
 COMMAND_TIMEOUT_SECONDS = 15
+# `java -version` quotes its version, and a GA release has no minor part ("21").
+VERSION = re.compile(r'"(\d+)(?:\.\d+)*"|(\d+)\.\d+')
 
 Run = Callable[[list[str]], subprocess.CompletedProcess[str]]
 Fetch = Callable[[str, str], int]
@@ -40,10 +42,10 @@ def check_tool(name: str, command: list[str], major: int, run: Run = _run) -> Ch
         result = run(command)
     except (OSError, subprocess.TimeoutExpired):
         return Check(name, FAIL, f"not found, need version {major}")
-    match = re.search(r"(\d+)\.\d+", result.stdout + result.stderr)
-    found = int(match.group(1)) if match else None
+    match = VERSION.search(result.stdout + result.stderr)
+    found = int(match.group(1) or match.group(2)) if match else None
     if found == major:
-        return Check(name, OK, match.group(0))
+        return Check(name, OK, match.group(0).strip('"'))
     return Check(name, FAIL, f"found {found}, need version {major}")
 
 
