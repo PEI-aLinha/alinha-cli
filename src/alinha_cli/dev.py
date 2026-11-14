@@ -37,6 +37,9 @@ class Proc:
 def partition_services(root: Path) -> tuple[list[str], list[str]]:
     """Splits compose services into long-running ones and one-shot initialisers."""
     services = yaml.safe_load((root / COMPOSE_FILE).read_text())["services"]
+    # Only an explicit `restart: "no"` marks a one-shot service. A missing key must stay
+    # long-running: the dev services omit it, and `run --rm` on them would never return.
+    # Unquoted `no` is parsed as False by YAML 1.1.
     one_shot = [name for name, spec in services.items() if spec.get("restart") in ("no", False)]
     return [name for name in services if name not in one_shot], one_shot
 
