@@ -10,12 +10,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from alinha_cli.project import COMPOSE_FILE, read_plugins
+from alinha_cli.project import BAO_DEV_TOKEN, COMPOSE_FILE, read_plugins
 
 OK, WARN, FAIL = "ok", "warn", "fail"
 PORTS = (5432, 6379, 8180, 8200, 8080, 5173)
 BAO_SECRET_URL = "http://localhost:8200/v1/secret/data/alinha/app"
-BAO_DEV_TOKEN = "dev-app-token"
 COMMAND_TIMEOUT_SECONDS = 15
 # `java -version` quotes its version, and a GA release has no minor part ("21").
 VERSION = re.compile(r'"(\d+)(?:\.\d+)*"|(\d+)\.\d+')

@@ -11,9 +11,8 @@ from pathlib import Path
 
 import yaml
 
-from alinha_cli.project import COMPOSE_FILE
+from alinha_cli.project import BAO_DEV_TOKEN, COMPOSE_FILE
 
-BAO_DEV_TOKEN = "dev-app-token"
 POLL_SECONDS = 0.1
 STOP_TIMEOUT_SECONDS = 10
 EXIT_INTERRUPTED = 130

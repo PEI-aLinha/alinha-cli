@@ -8,6 +8,8 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import Version
 
 COMPOSE_FILE = Path("deploy/docker-compose.dev.yml")
+# Matches the app token that `deploy/openbao/init.sh` creates in the checkout.
+BAO_DEV_TOKEN = "dev-app-token"
 VERSION_FILE = ".alinha-cli-version"
 INSTALL_COMMAND = "uv tool install --force git+ssh://git@github.com/PEI-aLinha/alinha-cli.git@<tag>"
 
