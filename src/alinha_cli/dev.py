@@ -15,6 +15,7 @@ from alinha_cli.project import BAO_DEV_TOKEN, COMPOSE_FILE
 
 POLL_SECONDS = 0.1
 STOP_TIMEOUT_SECONDS = 10
+DRAIN_TIMEOUT_SECONDS = 2
 EXIT_INTERRUPTED = 130
 EXIT_NOT_FOUND = 127
 
@@ -155,6 +156,13 @@ def _wait_for_first_exit(running: list[subprocess.Popen[str]]) -> int:
         time.sleep(POLL_SECONDS)
 
 
+def _drain(pumps: list[threading.Thread]) -> None:
+    """Lets the pumps print what the apps wrote while stopping, within a bound."""
+    deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
+    for pump in pumps:
+        pump.join(timeout=max(0, deadline - time.monotonic()))
+
+
 class _Terminated(Exception):
     pass
 
@@ -175,6 +183,7 @@ def supervise(procs: list[Proc], emit: Emit) -> int:
             emit(line)
 
     running: list[subprocess.Popen[str]] = []
+    pumps: list[threading.Thread] = []
     # The apps run in their own sessions, so they do not get the terminal's signals.
     # Turn SIGTERM/SIGHUP into an exception so that `finally` stops them.
     previous = {signum: signal.signal(signum, _raise_terminated) for signum in STOP_SIGNALS}
@@ -182,9 +191,11 @@ def supervise(procs: list[Proc], emit: Emit) -> int:
         for proc in procs:
             process = _start(proc)
             running.append(process)
-            threading.Thread(
+            pump = threading.Thread(
                 target=_pump, args=(proc.name, process.stdout, locked_emit), daemon=True
-            ).start()
+            )
+            pump.start()
+            pumps.append(pump)
         return _wait_for_first_exit(running)
     except FileNotFoundError as error:
         emit(f"Could not start process: {error}")
@@ -201,6 +212,7 @@ def supervise(procs: list[Proc], emit: Emit) -> int:
             signal.signal(signum, signal.SIG_IGN)
         try:
             _stop(running)
+            _drain(pumps)
         finally:
             for signum, handler in restore.items():
                 signal.signal(signum, handler)

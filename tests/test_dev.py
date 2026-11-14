@@ -39,6 +39,33 @@ def test_unreadable_compose_file_is_a_dependency_error(project: Path, content: s
         partition_services(project)
 
 
+def test_output_printed_while_stopping_is_not_lost(project: Path, tmp_path: Path) -> None:
+    ready = tmp_path / "ready"
+    lines: list[str] = []
+    # Prints a burst on SIGTERM, as an app does when it logs its shutdown.
+    stopping = (
+        "import signal,sys,time,pathlib\n"
+        "def bye(*_):\n"
+        "    for i in range(2000): print(f'bye {i}')\n"
+        "    sys.exit(0)\n"
+        "signal.signal(signal.SIGTERM, bye)\n"
+        f"pathlib.Path({str(ready)!r}).write_text('1')\n"
+        "time.sleep(60)"
+    )
+    failing = (
+        "import pathlib,time,sys\n"
+        f"while not pathlib.Path({str(ready)!r}).exists(): time.sleep(0.05)\n"
+        "sys.exit(1)"
+    )
+
+    def slow_emit(line: str) -> None:  # a slow terminal: the pump lags behind the app
+        time.sleep(0.0002)
+        lines.append(line)
+
+    supervise([Proc("web", py(stopping), project), Proc("api", py(failing), project)], slow_emit)
+    assert "[web] bye 1999" in lines
+
+
 def test_backend_receives_the_dev_token(project: Path) -> None:
     backend, frontend = app_processes(project)
     assert backend.env["BAO_TOKEN"] == "dev-app-token"
