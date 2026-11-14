@@ -112,6 +112,44 @@ def test_signal_group_ignores_permission_error(monkeypatch) -> None:
     dev._signal_group(1, dev.signal.SIGTERM)
 
 
+class _ExitedProcess:
+    pid = 4242
+
+    def wait(self, timeout: float | None = None) -> int:
+        return 0
+
+
+def _record_killpg(monkeypatch, group_exists: bool) -> list[int]:
+    from alinha_cli import dev
+
+    sent: list[int] = []
+
+    def killpg(_pid: int, sig: int) -> None:
+        if sig == 0 and not group_exists:
+            raise ProcessLookupError
+        sent.append(sig)
+
+    monkeypatch.setattr(dev.os, "killpg", killpg)
+    return sent
+
+
+def test_stop_skips_sigkill_when_group_is_gone(monkeypatch) -> None:
+    from alinha_cli import dev
+
+    sent = _record_killpg(monkeypatch, group_exists=False)
+    dev._stop([_ExitedProcess()])
+    assert dev.signal.SIGKILL not in sent
+    assert dev.signal.SIGTERM in sent
+
+
+def test_stop_kills_leftover_group_members(monkeypatch) -> None:
+    from alinha_cli import dev
+
+    sent = _record_killpg(monkeypatch, group_exists=True)
+    dev._stop([_ExitedProcess()])
+    assert sent[-1] == dev.signal.SIGKILL
+
+
 def test_start_dependencies_runs_one_shot_services_after_the_rest(
     project: Path, monkeypatch
 ) -> None:

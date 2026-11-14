@@ -80,11 +80,23 @@ def _signal_group(pid: int, signum: signal.Signals) -> None:
         pass
 
 
+def _group_exists(pid: int) -> bool:
+    try:
+        os.killpg(pid, 0)
+    except (ProcessLookupError, PermissionError):
+        # PermissionError: macOS gives EPERM for a group left with only an unreaped zombie.
+        return False
+    return True
+
+
 def _stop(running: list[subprocess.Popen[str]]) -> None:
     """Stops each app's process group (e.g. `pnpm` and Vite).
 
     The `bootRun` JVM is not in the `gradlew` group: it runs under the Gradle daemon,
     which cancels the build when the `gradlew` client goes away.
+
+    SIGKILL goes only to groups that still have members after the timeout. An empty
+    group's id can be reused by an unrelated process group, which must not be killed.
     """
     for process in running:
         _signal_group(process.pid, signal.SIGTERM)
@@ -94,7 +106,8 @@ def _stop(running: list[subprocess.Popen[str]]) -> None:
             process.wait(timeout=max(0, deadline - time.monotonic()))
         except subprocess.TimeoutExpired:
             pass
-        _signal_group(process.pid, signal.SIGKILL)
+        if _group_exists(process.pid):
+            _signal_group(process.pid, signal.SIGKILL)
         process.wait()
 
 
