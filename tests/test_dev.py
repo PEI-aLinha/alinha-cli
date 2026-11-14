@@ -99,6 +99,45 @@ def test_stop_signal_stops_the_apps(project: Path, tmp_path: Path) -> None:
         assert not alive(pid)
 
 
+def test_second_signal_during_stop_does_not_orphan_the_apps(tmp_path: Path) -> None:
+    """A second Ctrl-C/SIGTERM while stopping must not skip the SIGKILL of an app that ignores SIGTERM."""
+    import signal
+    import subprocess
+
+    pid_file = tmp_path / "pid"
+    child = (
+        "import os,signal,time,pathlib;signal.signal(signal.SIGTERM, signal.SIG_IGN);"
+        f"pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid()));time.sleep(60)"
+    )
+    runner = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from alinha_cli import dev\n"
+        "dev.STOP_TIMEOUT_SECONDS = 2\n"
+        f"sys.exit(dev.supervise([dev.Proc('web', [sys.executable, '-c', {child!r}], Path({str(tmp_path)!r}))], print))"
+    )
+    src = str(Path(__file__).parents[1] / "src")
+    supervisor = subprocess.Popen(
+        [sys.executable, "-c", runner], env={**os.environ, "PYTHONPATH": src}
+    )
+    deadline = time.monotonic() + 10
+    while not pid_file.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    pid = int(pid_file.read_text())
+    supervisor.send_signal(signal.SIGTERM)
+    time.sleep(0.5)  # now inside _stop, waiting out the SIGTERM timeout
+    supervisor.send_signal(signal.SIGINT)
+    supervisor.send_signal(signal.SIGTERM)
+    supervisor.wait(timeout=15)
+    deadline = time.monotonic() + 5
+    while alive(pid) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    still_alive = alive(pid)
+    if still_alive:
+        os.kill(pid, signal.SIGKILL)
+    assert not still_alive
+
+
 def test_non_utf8_output_does_not_block(project: Path) -> None:
     lines: list[str] = []
     code = supervise(

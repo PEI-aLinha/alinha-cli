@@ -180,6 +180,13 @@ def supervise(procs: list[Proc], emit: Emit) -> int:
     except _Terminated as terminated:
         return 128 + terminated.args[0]
     finally:
-        _stop(running)
-        for signum, handler in previous.items():
-            signal.signal(signum, handler)
+        # Ignore further signals while stopping: a second Ctrl-C or SIGTERM would otherwise
+        # raise out of `_stop`, skip the SIGKILL and leave the apps running in their sessions.
+        restore = {**previous, signal.SIGINT: signal.signal(signal.SIGINT, signal.SIG_IGN)}
+        for signum in STOP_SIGNALS:
+            signal.signal(signum, signal.SIG_IGN)
+        try:
+            _stop(running)
+        finally:
+            for signum, handler in restore.items():
+                signal.signal(signum, handler)
