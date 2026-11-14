@@ -196,7 +196,7 @@ alinha down
 | `127` | `alinha dev` could not find a program to start |
 | `130` | `alinha dev` was stopped with Ctrl-C |
 
-If an app exits on its own, `alinha dev` returns that app's exit code.
+If an app exits on its own, `alinha dev` returns that app's exit code. If the app was killed by a signal, the code is `128` plus the signal number (for example `137` for `SIGKILL`).
 
 ## How it works
 

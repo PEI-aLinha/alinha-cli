@@ -61,6 +61,13 @@ def test_failure_stops_siblings_and_returns_its_code(project: Path, tmp_path: Pa
     assert not alive(pid)
 
 
+def test_app_killed_by_signal_returns_128_plus_signal(project: Path) -> None:
+    """A signal-killed app (e.g. OOM-killed JVM) must give the shell convention 128+N, not -N."""
+    killed = "import os,signal;os.kill(os.getpid(), signal.SIGKILL)"
+    code = supervise([Proc("api", py(killed), project)], lambda _l: None)
+    assert code == 128 + 9
+
+
 def test_stop_signal_stops_the_apps(project: Path, tmp_path: Path) -> None:
     """SIGTERM/SIGHUP to `alinha dev` (e.g. closing the terminal) must not leave apps running."""
     import signal

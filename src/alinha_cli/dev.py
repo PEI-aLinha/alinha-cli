@@ -125,11 +125,16 @@ def _start(proc: Proc) -> subprocess.Popen[str]:
     )
 
 
+def _exit_status(returncode: int) -> int:
+    """Popen gives -N for a process killed by signal N; the shell convention is 128+N."""
+    return 128 - returncode if returncode < 0 else returncode
+
+
 def _wait_for_first_exit(running: list[subprocess.Popen[str]]) -> int:
     while True:
         for process in running:
             if process.poll() is not None:
-                return process.returncode
+                return _exit_status(process.returncode)
         time.sleep(POLL_SECONDS)
 
 
