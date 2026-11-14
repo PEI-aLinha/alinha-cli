@@ -47,3 +47,15 @@ def test_uninitialized_submodule_is_reported(project: Path) -> None:
     git(project, "submodule", "deinit", "-f", "plugins/feature/demo")
     status = demo(project)
     assert not status.initialized
+
+
+def test_submodule_without_committed_pointer_has_unknown_drift(
+    project: Path, tmp_path: Path
+) -> None:
+    other = tmp_path / "origin-other"
+    other.mkdir()
+    git(other, "init")
+    commit(other, "first")
+    git(project, "submodule", "add", str(other), "plugins/feature/other")  # staged, not committed
+    status = next(s for s in plugin_statuses(project) if s.name == "feature/other")
+    assert (status.ahead, status.behind) == (None, None)

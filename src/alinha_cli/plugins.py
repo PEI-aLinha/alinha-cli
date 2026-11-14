@@ -39,8 +39,11 @@ def _status(root: Path, plugin: Plugin, fetch: bool) -> PluginStatus:
         if fetched.returncode != 0:
             raise RuntimeError(f"Could not fetch {plugin.name}: {fetched.stderr.strip()}")
     relative = plugin.path.relative_to(root).as_posix()
-    pointer = _git(root, "rev-parse", f"HEAD:{relative}").stdout.strip()
-    ahead, behind = _drift(plugin, pointer)
+    pointer = _git(root, "rev-parse", f"HEAD:{relative}")
+    # Not committed in the main repo yet: there is no pointer to compare with.
+    ahead, behind = (
+        _drift(plugin, pointer.stdout.strip()) if pointer.returncode == 0 else (None, None)
+    )
     on_main = _git(plugin.path, "merge-base", "--is-ancestor", "HEAD", "origin/main")
     return PluginStatus(
         name=plugin.name,
