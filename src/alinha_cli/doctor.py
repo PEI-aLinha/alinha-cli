@@ -56,10 +56,14 @@ def check_command(name: str, command: list[str], hint: str, level: str, run: Run
 
 
 def check_git_setting(key: str, run: Run = _run) -> Check:
-    result = run(["git", "config", "--get", key])
+    name = f"git {key}"
+    try:
+        result = run(["git", "config", "--get", key])
+    except (OSError, subprocess.TimeoutExpired):
+        return Check(name, FAIL, "could not run git")
     if result.stdout.strip() == "true":
-        return Check(f"git {key}", OK)
-    return Check(f"git {key}", WARN, f"run: git config --global {key} true")
+        return Check(name, OK)
+    return Check(name, WARN, f"run: git config --global {key} true")
 
 
 def check_port(port: int, owned: frozenset[int]) -> Check:

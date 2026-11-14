@@ -1,6 +1,8 @@
 import socket
 from pathlib import Path
-from subprocess import CompletedProcess
+from subprocess import CompletedProcess, TimeoutExpired
+
+import pytest
 
 from alinha_cli.doctor import (
     FAIL,
@@ -42,6 +44,16 @@ def test_missing_tool_fails() -> None:
 def test_git_setting_must_be_true(project: Path) -> None:
     assert check_git_setting("x", runner(stdout="true\n")).level == OK
     assert check_git_setting("x", runner(stdout="", code=1)).level == WARN
+
+
+@pytest.mark.parametrize("error", [FileNotFoundError(), TimeoutExpired(["git"], 15)])
+def test_git_setting_fails_instead_of_crashing_when_git_cannot_run(error: Exception) -> None:
+    def run(_cmd: list[str]) -> CompletedProcess[str]:
+        raise error
+
+    result = check_git_setting("x", run)
+    assert result.level == FAIL
+    assert "git" in result.detail
 
 
 def test_busy_port_fails_unless_owned_by_compose() -> None:
