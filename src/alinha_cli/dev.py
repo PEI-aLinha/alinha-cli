@@ -113,8 +113,10 @@ def _stop(running: list[subprocess.Popen[str]]) -> None:
     The `bootRun` JVM is not in the `gradlew` group: it runs under the Gradle daemon,
     which cancels the build when the `gradlew` client goes away.
 
-    SIGKILL goes only to groups that still have members after the timeout. An empty
-    group's id can be reused by an unrelated process group, which must not be killed.
+    The timeout covers the whole group, not just the leader: `pnpm` can exit at once
+    while Vite is still shutting down. SIGKILL goes only to groups that still have
+    members after the timeout. An empty group's id can be reused by an unrelated
+    process group, which must not be killed.
     """
     for process in running:
         _signal_group(process.pid, signal.SIGTERM)
@@ -124,6 +126,8 @@ def _stop(running: list[subprocess.Popen[str]]) -> None:
             process.wait(timeout=max(0, deadline - time.monotonic()))
         except subprocess.TimeoutExpired:
             pass
+        while _group_exists(process.pid) and time.monotonic() < deadline:
+            time.sleep(POLL_SECONDS)
         if _group_exists(process.pid):
             _signal_group(process.pid, signal.SIGKILL)
         process.wait()

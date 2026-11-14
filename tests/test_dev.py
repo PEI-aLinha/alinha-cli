@@ -180,6 +180,37 @@ def test_second_signal_during_stop_does_not_orphan_the_apps(tmp_path: Path) -> N
     assert not still_alive
 
 
+def test_children_get_the_grace_period_when_the_leader_exits_first(
+    project: Path, tmp_path: Path
+) -> None:
+    """Like pnpm and Vite: the leader dies on SIGTERM, its child needs a moment to shut down."""
+    ready, done = tmp_path / "ready", tmp_path / "done"
+    child = (
+        "import signal,time,pathlib\n"
+        "def bye(*_):\n"
+        "    time.sleep(1)\n"
+        f"    pathlib.Path({str(done)!r}).write_text('1')\n"
+        "    raise SystemExit(0)\n"
+        "signal.signal(signal.SIGTERM, bye)\n"
+        f"pathlib.Path({str(ready)!r}).write_text('1')\n"
+        "time.sleep(60)"
+    )
+    leader = (
+        "import subprocess,sys,time\n"
+        f"subprocess.Popen([sys.executable, '-c', {child!r}])\n"
+        "time.sleep(60)"
+    )
+    failing = (
+        "import pathlib,time,sys\n"
+        f"while not pathlib.Path({str(ready)!r}).exists(): time.sleep(0.05)\n"
+        "sys.exit(1)"
+    )
+    supervise(
+        [Proc("web", py(leader), project), Proc("api", py(failing), project)], lambda _l: None
+    )
+    assert done.exists()
+
+
 def test_non_utf8_output_does_not_block(project: Path) -> None:
     lines: list[str] = []
     code = supervise(
@@ -233,6 +264,7 @@ def test_stop_skips_sigkill_when_group_is_gone(monkeypatch) -> None:
 def test_stop_kills_leftover_group_members(monkeypatch) -> None:
     from alinha_cli import dev
 
+    monkeypatch.setattr(dev, "STOP_TIMEOUT_SECONDS", 0.2)  # the group never empties
     sent = _record_killpg(monkeypatch, group_exists=True)
     dev._stop([_ExitedProcess()])
     assert sent[-1] == dev.signal.SIGKILL
