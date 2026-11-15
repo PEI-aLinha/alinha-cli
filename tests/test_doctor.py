@@ -99,3 +99,12 @@ def test_secrets_warn_when_openbao_is_down() -> None:
 def test_secrets_ok_on_200_and_fail_when_missing() -> None:
     assert check_secrets(lambda _u, _t: 200).level == OK
     assert check_secrets(lambda _u, _t: 404).level == FAIL
+
+
+def test_secrets_are_not_checked_without_an_openbao_service() -> None:
+    def fetch(_url: str, _token: str) -> int:
+        raise AssertionError("must not contact OpenBao")
+
+    check = check_secrets(fetch, declared=False)
+    assert check.level == OK
+    assert "no openbao service" in check.detail

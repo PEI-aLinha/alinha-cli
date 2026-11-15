@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from alinha_cli.dev import DependencyError, partition_services
 from alinha_cli.project import BAO_DEV_TOKEN, COMPOSE_FILE, read_plugins
 
 OK, WARN, FAIL = "ok", "warn", "fail"
@@ -100,8 +101,10 @@ def _fetch(url: str, token: str) -> int:
         return error.code
 
 
-def check_secrets(fetch: Fetch = _fetch) -> Check:
+def check_secrets(fetch: Fetch = _fetch, declared: bool = True) -> Check:
     name = "OpenBao dev secrets"
+    if not declared:
+        return Check(name, OK, f"no openbao service in {COMPOSE_FILE}, nothing to check")
     try:
         status = fetch(BAO_SECRET_URL, BAO_DEV_TOKEN)
     except OSError:
@@ -119,6 +122,14 @@ def _compose_ports(root: Path) -> frozenset[int]:
     except (OSError, subprocess.TimeoutExpired):
         return frozenset()
     return parse_published_ports(result.stdout) if result.returncode == 0 else frozenset()
+
+
+def _declares_openbao(root: Path) -> bool:
+    try:
+        long_running, one_shot = partition_services(root)
+    except DependencyError:
+        return False
+    return "openbao" in long_running + one_shot
 
 
 def _submodule_checks(root: Path) -> list[Check]:
@@ -144,5 +155,5 @@ def run_doctor(root: Path) -> list[Check]:
         else Check("frontend deps", WARN, "run: pnpm install"),
         *_submodule_checks(root),
         *[check_port(port, owned) for port in PORTS],
-        check_secrets(),
+        check_secrets(declared=_declares_openbao(root)),
     ]
