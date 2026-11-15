@@ -307,3 +307,15 @@ def test_non_executable_command_is_reported_without_traceback(tmp_path: Path) ->
     code = supervise([Proc("api", [str(script)], tmp_path)], lines.append)
     assert code == 127
     assert any("Could not start process" in line for line in lines)
+
+
+def test_start_dependencies_skips_up_when_every_service_is_one_shot(
+    project: Path, monkeypatch
+) -> None:
+    from alinha_cli import dev
+
+    (project / COMPOSE_FILE).write_text("services:\n  init:\n    restart: 'no'\n")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(dev.subprocess, "run", lambda command, **_kw: calls.append(command))
+    dev.start_dependencies(project)
+    assert [c[4:] for c in calls] == [["run", "--rm", "--no-deps", "init"]]

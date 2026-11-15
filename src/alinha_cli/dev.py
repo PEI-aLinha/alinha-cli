@@ -69,7 +69,9 @@ def _compose(root: Path, *args: str) -> None:
 
 def start_dependencies(root: Path) -> None:
     long_running, one_shot = partition_services(root)
-    _compose(root, "up", "-d", "--wait", *long_running)
+    # `up` with no service names would start every service, the one-shots included.
+    if long_running:
+        _compose(root, "up", "-d", "--wait", *long_running)
     for service in one_shot:
         _compose(root, "run", "--rm", "--no-deps", service)
 
