@@ -201,7 +201,8 @@ def supervise(procs: list[Proc], emit: Emit) -> int:
             pump.start()
             pumps.append(pump)
         return _wait_for_first_exit(running)
-    except FileNotFoundError as error:
+    except OSError as error:
+        # A missing or non-executable command (e.g. `./gradlew` without +x).
         emit(f"Could not start process: {error}")
         return EXIT_NOT_FOUND
     except KeyboardInterrupt:

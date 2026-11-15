@@ -297,3 +297,13 @@ def test_compose_failure_raises_dependency_error(project: Path, monkeypatch) -> 
     monkeypatch.setattr(dev.subprocess, "run", missing)
     with pytest.raises(dev.DependencyError):
         dev.stop_dependencies(project)
+
+
+def test_non_executable_command_is_reported_without_traceback(tmp_path: Path) -> None:
+    script = tmp_path / "gradlew"
+    script.write_text("#!/bin/sh\n")
+    script.chmod(0o644)
+    lines: list[str] = []
+    code = supervise([Proc("api", [str(script)], tmp_path)], lines.append)
+    assert code == 127
+    assert any("Could not start process" in line for line in lines)
