@@ -1,10 +1,13 @@
 """Reports how each plugin checkout relates to the main repo's pointer."""
 
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from alinha_cli.project import Plugin, read_plugins
+
+FETCH_TIMEOUT_SECONDS = 30
 
 
 @dataclass(frozen=True)
@@ -23,6 +26,28 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *args], cwd=cwd, check=False, capture_output=True, text=True)
 
 
+def _fetch(plugin: Plugin) -> str | None:
+    """Fetches origin/main and returns an error message, or None on success."""
+    try:
+        fetched = subprocess.run(
+            ["git", "fetch", "-q", "origin", "main"],
+            cwd=plugin.path,
+            check=False,
+            capture_output=True,
+            text=True,
+            # Fail instead of waiting for credentials: HTTPS gets no prompt, and the
+            # timeout bounds a hung network or an SSH passphrase prompt.
+            stdin=subprocess.DEVNULL,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+            timeout=FETCH_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return f"Could not fetch {plugin.name}: timed out after {FETCH_TIMEOUT_SECONDS}s"
+    if fetched.returncode != 0:
+        return f"Could not fetch {plugin.name}: {fetched.stderr.strip()}"
+    return None
+
+
 def _drift(plugin: Plugin, pointer: str) -> tuple[int | None, int | None]:
     """Returns (ahead, behind) relative to the pointer, or unknowns if it is not available."""
     counts = _git(plugin.path, "rev-list", "--left-right", "--count", f"{pointer}...HEAD")
@@ -35,12 +60,8 @@ def _drift(plugin: Plugin, pointer: str) -> tuple[int | None, int | None]:
 def _status(root: Path, plugin: Plugin, fetch: bool) -> PluginStatus:
     if not (plugin.path / ".git").exists():
         return PluginStatus(plugin.name, initialized=False)
-    fetch_error = None
-    if fetch:
-        fetched = _git(plugin.path, "fetch", "-q", "origin", "main")
-        if fetched.returncode != 0:
-            # Keep going: the other plugins still get a line, this one uses the last fetch.
-            fetch_error = f"Could not fetch {plugin.name}: {fetched.stderr.strip()}"
+    # On failure keep going: the other plugins still get a line, this one uses the last fetch.
+    fetch_error = _fetch(plugin) if fetch else None
     relative = plugin.path.relative_to(root).as_posix()
     pointer = _git(root, "rev-parse", f"HEAD:{relative}")
     # Not committed in the main repo yet: there is no pointer to compare with.

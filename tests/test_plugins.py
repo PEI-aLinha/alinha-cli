@@ -68,3 +68,23 @@ def test_failed_fetch_is_reported_per_plugin_and_keeps_the_rest(project: Path) -
     assert status.fetch_error
     assert (status.ahead, status.behind) == (0, 0)
     assert status.on_main  # from the last fetched origin/main
+
+
+def test_fetch_timeout_is_reported_and_keeps_the_rest(project: Path, monkeypatch) -> None:
+    import subprocess
+
+    from alinha_cli import plugins
+
+    real_run = subprocess.run
+
+    def run(command, **kwargs):
+        if command[:2] == ["git", "fetch"]:
+            assert kwargs["stdin"] is subprocess.DEVNULL
+            assert kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(plugins.subprocess, "run", run)
+    status = plugin_statuses(project, fetch=True)[0]
+    assert status.fetch_error and "timed out" in status.fetch_error
+    assert status.on_main  # from the last fetched origin/main
