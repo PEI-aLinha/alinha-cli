@@ -80,11 +80,22 @@ def stop_dependencies(root: Path) -> None:
     _compose(root, "down")
 
 
+BFF_BUILD_FILE = Path("bff/build.gradle.kts")
+
+
 def app_processes(root: Path) -> list[Proc]:
-    return [
-        Proc("api", ["./gradlew", ":app:bootRun"], root, {"BAO_TOKEN": BAO_DEV_TOKEN}),
-        Proc("web", ["pnpm", "dev"], root),
-    ]
+    """The backend, the BFF (when the checkout has one) and the frontend.
+
+    In dev, Vite proxies `/api`, `/oauth2` and `/auth` to the BFF, so without it the
+    login and every API call fail.
+    """
+    procs = [Proc("api", ["./gradlew", ":app:bootRun"], root, {"BAO_TOKEN": BAO_DEV_TOKEN})]
+    if (root / BFF_BUILD_FILE).is_file():
+        procs.append(
+            Proc("bff", ["./gradlew", ":bff:bootRun"], root, {"SPRING_PROFILES_ACTIVE": "dev"})
+        )
+    procs.append(Proc("web", ["pnpm", "dev"], root))
+    return procs
 
 
 def _pump(name: str, stream, emit: Emit) -> None:

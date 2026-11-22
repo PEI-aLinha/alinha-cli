@@ -72,6 +72,16 @@ def test_backend_receives_the_dev_token(project: Path) -> None:
     assert frontend.command == ["pnpm", "dev"]
 
 
+def test_bff_runs_with_the_dev_profile_when_the_checkout_has_one(project: Path) -> None:
+    (project / "bff").mkdir()
+    (project / "bff" / "build.gradle.kts").write_text("")
+    names = [proc.name for proc in app_processes(project)]
+    bff = app_processes(project)[1]
+    assert names == ["api", "bff", "web"]
+    assert bff.command == ["./gradlew", ":bff:bootRun"]
+    assert bff.env["SPRING_PROFILES_ACTIVE"] == "dev"
+
+
 def test_output_is_prefixed_per_process(project: Path) -> None:
     lines: list[str] = []
     code = supervise([Proc("api", py("print('hello')"), project)], lines.append)
