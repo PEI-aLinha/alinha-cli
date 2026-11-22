@@ -10,11 +10,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from alinha_cli.dev import DependencyError, partition_services
+from alinha_cli.dev import DependencyError, partition_services, published_ports
 from alinha_cli.project import BAO_DEV_TOKEN, COMPOSE_FILE, read_plugins
 
 OK, WARN, FAIL = "ok", "warn", "fail"
-PORTS = (5432, 6379, 8180, 8200, 8080, 5173)
+# Backend, BFF and Vite. The containers' ports are read from the compose file.
+APP_PORTS = (8080, 8081, 5173)
 BAO_SECRET_URL = "http://localhost:8200/v1/secret/data/alinha/app"
 COMMAND_TIMEOUT_SECONDS = 15
 # `java -version` quotes its version, and a GA release has no minor part ("21").
@@ -140,6 +141,14 @@ def _submodule_checks(root: Path) -> list[Check]:
     return [Check("submodules", OK)]
 
 
+def ports_to_check(root: Path) -> list[int]:
+    try:
+        compose = published_ports(root)
+    except DependencyError:
+        compose = []
+    return [*compose, *(port for port in APP_PORTS if port not in compose)]
+
+
 def run_doctor(root: Path) -> list[Check]:
     owned = _compose_ports(root)
     node_modules = (root / "node_modules").is_dir()
@@ -154,6 +163,6 @@ def run_doctor(root: Path) -> list[Check]:
         if node_modules
         else Check("frontend deps", WARN, "run: pnpm install"),
         *_submodule_checks(root),
-        *[check_port(port, owned) for port in PORTS],
+        *[check_port(port, owned) for port in ports_to_check(root)],
         check_secrets(declared=_declares_openbao(root)),
     ]

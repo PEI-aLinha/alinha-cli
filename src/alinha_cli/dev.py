@@ -59,6 +59,31 @@ def partition_services(root: Path) -> tuple[list[str], list[str]]:
     return [name for name in services if name not in one_shot], one_shot
 
 
+def _host_port(spec: object) -> int | None:
+    """The host port of one compose `ports` entry, or None when it publishes none."""
+    if isinstance(spec, dict):
+        published = str(spec.get("published", ""))
+        return int(published) if published.isdigit() else None
+    if not isinstance(spec, str):
+        return None  # a bare container port is published on a random host port
+    # [ip:]host:container[/protocol]; rsplit keeps an IPv6 address such as [::1] intact.
+    parts = spec.split("/")[0].rsplit(":", 2)
+    host = parts[-2] if len(parts) >= 2 else ""
+    return int(host) if host.isdigit() else None
+
+
+def published_ports(root: Path) -> list[int]:
+    """Host ports the compose services publish, in order of first appearance."""
+    ports: list[int] = []
+    for spec in _read_services(root).values():
+        entries = spec.get("ports") if isinstance(spec, dict) else None
+        for entry in entries or []:
+            port = _host_port(entry)
+            if port is not None and port not in ports:
+                ports.append(port)
+    return ports
+
+
 def _compose(root: Path, *args: str) -> None:
     command = ["docker", "compose", "-f", str(root / COMPOSE_FILE), *args]
     try:

@@ -13,6 +13,7 @@ from alinha_cli.doctor import (
     check_secrets,
     check_tool,
     parse_published_ports,
+    ports_to_check,
 )
 
 
@@ -108,3 +109,29 @@ def test_secrets_are_not_checked_without_an_openbao_service() -> None:
     check = check_secrets(fetch, declared=False)
     assert check.level == OK
     assert "no openbao service" in check.detail
+
+
+def test_ports_come_from_the_compose_file_plus_the_apps(project: Path) -> None:
+    (project / "deploy" / "docker-compose.dev.yml").write_text(
+        """
+services:
+  postgres:
+    ports: ["127.0.0.1:5432:5432"]
+  mailpit:
+    ports: ["127.0.0.1:1025:1025", "8025:8025/tcp", "[::1]:9000:9000"]
+  random:
+    ports: [5000, "6000"]
+  long:
+    ports:
+      - target: 80
+        published: "8081"
+  plain:
+    image: busybox
+"""
+    )
+    assert ports_to_check(project) == [5432, 1025, 8025, 9000, 8081, 8080, 5173]
+
+
+def test_ports_fall_back_to_the_apps_when_compose_is_unreadable(project: Path) -> None:
+    (project / "deploy" / "docker-compose.dev.yml").write_text("services: [")
+    assert ports_to_check(project) == [8080, 8081, 5173]
