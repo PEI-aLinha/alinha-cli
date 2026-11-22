@@ -6,8 +6,10 @@ import typer
 
 from alinha_cli import __version__
 from alinha_cli.dev import (
+    DEV_ROLES,
     DependencyError,
     app_processes,
+    frontend_processes,
     start_dependencies,
     stop_dependencies,
     supervise,
@@ -100,15 +102,29 @@ def doctor() -> None:
 @app.command()
 def dev(
     no_deps: bool = typer.Option(False, "--no-deps", help="Do not start the containers."),
+    demo: bool = typer.Option(False, "--demo", help="Start the backend with demo organizations."),
+    role: str | None = typer.Option(
+        None,
+        "--role",
+        help=f"Run only the frontend with a fake session: {', '.join(DEV_ROLES)}.",
+    ),
 ) -> None:
-    """Start dependencies, then run the backend and frontend until Ctrl-C."""
+    """Start dependencies, then run the backend, BFF and frontend until Ctrl-C."""
     root = _root()
+    if role is not None:
+        if demo:
+            raise _fail("--demo needs the backend, which --role does not start.", EXIT_USAGE)
+        try:
+            procs = frontend_processes(root, role)
+        except ValueError as error:
+            raise _fail(str(error), EXIT_USAGE) from error
+        raise typer.Exit(supervise(procs, typer.echo))
     if not no_deps:
         try:
             start_dependencies(root)
         except DependencyError as error:
             raise _fail(str(error)) from error
-    raise typer.Exit(supervise(app_processes(root), typer.echo))
+    raise typer.Exit(supervise(app_processes(root, demo=demo), typer.echo))
 
 
 @app.command()

@@ -5,7 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from alinha_cli.dev import DependencyError, Proc, app_processes, partition_services, supervise
+from alinha_cli.dev import (
+    DependencyError,
+    Proc,
+    app_processes,
+    frontend_processes,
+    partition_services,
+    supervise,
+)
 from alinha_cli.project import COMPOSE_FILE
 
 
@@ -70,6 +77,31 @@ def test_backend_receives_the_dev_token(project: Path) -> None:
     backend, frontend = app_processes(project)
     assert backend.env["BAO_TOKEN"] == "dev-app-token"
     assert frontend.command == ["pnpm", "dev"]
+
+
+def test_demo_turns_on_the_demo_profile_only_for_the_backend(project: Path) -> None:
+    backend, frontend = app_processes(project, demo=True)
+    assert backend.env["SPRING_PROFILES_ACTIVE"] == "demo"
+    assert "SPRING_PROFILES_ACTIVE" not in frontend.env
+    assert "SPRING_PROFILES_ACTIVE" not in app_processes(project)[0].env
+
+
+def test_role_runs_only_the_frontend_with_a_fake_session(project: Path) -> None:
+    (web,) = frontend_processes(project, "consultant")
+    assert web.command == ["pnpm", "dev"]
+    assert web.env == {"VITE_DEV_ROLE": "consultant"}
+    with pytest.raises(ValueError, match="responsible"):
+        frontend_processes(project, "admin")
+
+
+def test_bff_runs_with_the_dev_profile_when_the_checkout_has_one(project: Path) -> None:
+    (project / "bff").mkdir()
+    (project / "bff" / "build.gradle.kts").write_text("")
+    names = [proc.name for proc in app_processes(project)]
+    bff = app_processes(project)[1]
+    assert names == ["api", "bff", "web"]
+    assert bff.command == ["./gradlew", ":bff:bootRun"]
+    assert bff.env["SPRING_PROFILES_ACTIVE"] == "dev"
 
 
 def test_output_is_prefixed_per_process(project: Path) -> None:

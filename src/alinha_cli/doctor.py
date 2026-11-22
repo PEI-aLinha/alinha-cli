@@ -1,6 +1,7 @@
 """Checks that a machine and checkout are ready for aLinha development."""
 
 import json
+import os
 import re
 import socket
 import subprocess
@@ -10,11 +11,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from alinha_cli.dev import DependencyError, partition_services
+from alinha_cli.dev import DependencyError, partition_services, published_ports
 from alinha_cli.project import BAO_DEV_TOKEN, COMPOSE_FILE, read_plugins
 
 OK, WARN, FAIL = "ok", "warn", "fail"
-PORTS = (5432, 6379, 8180, 8200, 8080, 5173)
+# Backend, BFF and Vite. The containers' ports are read from the compose file.
+APP_PORTS = (8080, 8081, 5173)
 BAO_SECRET_URL = "http://localhost:8200/v1/secret/data/alinha/app"
 COMMAND_TIMEOUT_SECONDS = 15
 # `java -version` quotes its version, and a GA release has no minor part ("21").
@@ -132,12 +134,57 @@ def _declares_openbao(root: Path) -> bool:
     return "openbao" in long_running + one_shot
 
 
+THEME_DIR = Path("frontend/keycloak-theme")
+THEME_BUILD = "pnpm --filter @alinha/keycloak-theme build-keycloak-theme"
+# npm lockfiles are never committed (pnpm only); skip trees that are not the team's sources.
+SKIPPED_DIRS = frozenset({".git", "node_modules", "build", "dist", ".gradle"})
+
+
+def check_keycloak_theme(root: Path, run: Run = _run) -> Check:
+    """The login theme jar that the dev Keycloak mounts. Without it Keycloak uses its own."""
+    name = "Keycloak theme"
+    if not (root / THEME_DIR).is_dir():
+        return Check(name, OK, "this checkout has no login theme")
+    if any((root / THEME_DIR / "dist_keycloak").glob("*.jar")):
+        return Check(name, OK)
+    maven = check_command("Maven", ["mvn", "--version"], "", WARN, run)
+    if maven.level != OK:
+        return Check(name, WARN, f"not built; install Maven, then run: {THEME_BUILD}")
+    return Check(name, WARN, f"not built, Keycloak shows its own login pages; run: {THEME_BUILD}")
+
+
+def find_npm_lockfiles(root: Path) -> list[Path]:
+    found = []
+    for directory, subdirs, files in os.walk(root):
+        subdirs[:] = [d for d in subdirs if d not in SKIPPED_DIRS]
+        if "package-lock.json" in files:
+            found.append(Path(directory, "package-lock.json").relative_to(root))
+    return sorted(found)
+
+
+def check_npm_lockfiles(root: Path) -> Check:
+    name = "npm lockfiles"
+    found = find_npm_lockfiles(root)
+    if not found:
+        return Check(name, OK)
+    paths = ", ".join(str(path) for path in found)
+    return Check(name, WARN, f"{paths}: npm was used instead of pnpm, delete them")
+
+
 def _submodule_checks(root: Path) -> list[Check]:
     missing = [p.name for p in read_plugins(root) if not (p.path / ".git").exists()]
     if missing:
         hint = f"{', '.join(missing)}: run git submodule update --init"
         return [Check("submodules", FAIL, hint)]
     return [Check("submodules", OK)]
+
+
+def ports_to_check(root: Path) -> list[int]:
+    try:
+        compose = published_ports(root)
+    except DependencyError:
+        compose = []
+    return [*compose, *(port for port in APP_PORTS if port not in compose)]
 
 
 def run_doctor(root: Path) -> list[Check]:
@@ -154,6 +201,8 @@ def run_doctor(root: Path) -> list[Check]:
         if node_modules
         else Check("frontend deps", WARN, "run: pnpm install"),
         *_submodule_checks(root),
-        *[check_port(port, owned) for port in PORTS],
+        check_keycloak_theme(root),
+        check_npm_lockfiles(root),
+        *[check_port(port, owned) for port in ports_to_check(root)],
         check_secrets(declared=_declares_openbao(root)),
     ]

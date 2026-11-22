@@ -59,6 +59,31 @@ def partition_services(root: Path) -> tuple[list[str], list[str]]:
     return [name for name in services if name not in one_shot], one_shot
 
 
+def _host_port(spec: object) -> int | None:
+    """The host port of one compose `ports` entry, or None when it publishes none."""
+    if isinstance(spec, dict):
+        published = str(spec.get("published", ""))
+        return int(published) if published.isdigit() else None
+    if not isinstance(spec, str):
+        return None  # a bare container port is published on a random host port
+    # [ip:]host:container[/protocol]; rsplit keeps an IPv6 address such as [::1] intact.
+    parts = spec.split("/")[0].rsplit(":", 2)
+    host = parts[-2] if len(parts) >= 2 else ""
+    return int(host) if host.isdigit() else None
+
+
+def published_ports(root: Path) -> list[int]:
+    """Host ports the compose services publish, in order of first appearance."""
+    ports: list[int] = []
+    for spec in _read_services(root).values():
+        entries = spec.get("ports") if isinstance(spec, dict) else None
+        for entry in entries or []:
+            port = _host_port(entry)
+            if port is not None and port not in ports:
+                ports.append(port)
+    return ports
+
+
 def _compose(root: Path, *args: str) -> None:
     command = ["docker", "compose", "-f", str(root / COMPOSE_FILE), *args]
     try:
@@ -80,11 +105,34 @@ def stop_dependencies(root: Path) -> None:
     _compose(root, "down")
 
 
-def app_processes(root: Path) -> list[Proc]:
-    return [
-        Proc("api", ["./gradlew", ":app:bootRun"], root, {"BAO_TOKEN": BAO_DEV_TOKEN}),
-        Proc("web", ["pnpm", "dev"], root),
-    ]
+BFF_BUILD_FILE = Path("bff/build.gradle.kts")
+# Fake sessions the shell offers under `pnpm dev` (VITE_DEV_ROLE), without the BFF.
+DEV_ROLES = ("consultant", "responsible", "analyst", "anonymous")
+
+
+def app_processes(root: Path, demo: bool = False) -> list[Proc]:
+    """The backend, the BFF (when the checkout has one) and the frontend.
+
+    In dev, Vite proxies `/api`, `/oauth2` and `/auth` to the BFF, so without it the
+    login and every API call fail. `demo` turns on the backend's demo organizations.
+    """
+    api_env = {"BAO_TOKEN": BAO_DEV_TOKEN}
+    if demo:
+        api_env["SPRING_PROFILES_ACTIVE"] = "demo"
+    procs = [Proc("api", ["./gradlew", ":app:bootRun"], root, api_env)]
+    if (root / BFF_BUILD_FILE).is_file():
+        procs.append(
+            Proc("bff", ["./gradlew", ":bff:bootRun"], root, {"SPRING_PROFILES_ACTIVE": "dev"})
+        )
+    procs.append(Proc("web", ["pnpm", "dev"], root))
+    return procs
+
+
+def frontend_processes(root: Path, role: str) -> list[Proc]:
+    """Only the frontend, with a fake session for `role`. Nothing else is needed."""
+    if role not in DEV_ROLES:
+        raise ValueError(f"unknown role {role!r}, expected one of {', '.join(DEV_ROLES)}")
+    return [Proc("web", ["pnpm", "dev"], root, {"VITE_DEV_ROLE": role})]
 
 
 def _pump(name: str, stream, emit: Emit) -> None:
