@@ -9,6 +9,8 @@ from alinha_cli.doctor import (
     OK,
     WARN,
     check_git_setting,
+    check_keycloak_theme,
+    check_npm_lockfiles,
     check_port,
     check_secrets,
     check_tool,
@@ -135,3 +137,30 @@ services:
 def test_ports_fall_back_to_the_apps_when_compose_is_unreadable(project: Path) -> None:
     (project / "deploy" / "docker-compose.dev.yml").write_text("services: [")
     assert ports_to_check(project) == [8080, 8081, 5173]
+
+
+def test_keycloak_theme_is_ok_without_a_theme_or_once_built(project: Path) -> None:
+    assert check_keycloak_theme(project).level == OK
+    dist = project / "frontend" / "keycloak-theme" / "dist_keycloak"
+    dist.mkdir(parents=True)
+    (dist / "keycloak-theme.jar").write_text("")
+    assert check_keycloak_theme(project).level == OK
+
+
+def test_unbuilt_keycloak_theme_warns_and_mentions_maven_when_missing(project: Path) -> None:
+    (project / "frontend" / "keycloak-theme").mkdir(parents=True)
+    with_maven = check_keycloak_theme(project, runner())
+    without_maven = check_keycloak_theme(project, runner(code=1))
+    assert with_maven.level == WARN and "build-keycloak-theme" in with_maven.detail
+    assert without_maven.level == WARN and "install Maven" in without_maven.detail
+
+
+def test_npm_lockfiles_warn_but_node_modules_is_skipped(project: Path) -> None:
+    assert check_npm_lockfiles(project).level == OK
+    for path in ("frontend/ui", "node_modules/dep"):
+        (project / path).mkdir(parents=True)
+        (project / path / "package-lock.json").write_text("{}")
+    check = check_npm_lockfiles(project)
+    assert check.level == WARN
+    assert check.detail.startswith("frontend/ui/package-lock.json:")
+    assert "node_modules" not in check.detail
