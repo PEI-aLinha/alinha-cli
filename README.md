@@ -47,7 +47,7 @@ brew install uv
 Install the CLI at a released version:
 
 ```bash
-uv tool install git+ssh://git@github.com/PEI-aLinha/alinha-cli.git@v0.1.0
+uv tool install git+ssh://git@github.com/PEI-aLinha/alinha-cli.git@v0.2.0
 ```
 
 Check that it works:
@@ -67,7 +67,7 @@ uv tool update-shell
 Install the new tag over the current one. The `--force` flag replaces the installed version:
 
 ```bash
-uv tool install --force git+ssh://git@github.com/PEI-aLinha/alinha-cli.git@v0.2.0
+uv tool install --force git+ssh://git@github.com/PEI-aLinha/alinha-cli.git@v0.3.0
 ```
 
 ### Uninstall
@@ -87,7 +87,7 @@ alinha dev             # start everything, Ctrl-C to stop the apps
 alinha down            # stop the containers when you are done
 ```
 
-After `alinha dev` starts, the backend is on <http://localhost:8080> and the frontend on <http://localhost:5173>.
+After `alinha dev` starts, the backend is on <http://localhost:8080>, the BFF on <http://localhost:8081> and the frontend on <http://localhost:5173>. Log in through the frontend.
 
 ## Commands
 
@@ -97,7 +97,7 @@ Every command accepts `--help`. Show the installed version with `alinha --versio
 |---|---|
 | [`alinha doctor`](#alinha-doctor) | Check tools, git settings, submodules, ports and dev secrets |
 | [`alinha plugins status`](#alinha-plugins-status) | Show branch, local changes and pointer drift for each plugin |
-| [`alinha dev`](#alinha-dev) | Start dependencies, then run the backend and frontend |
+| [`alinha dev`](#alinha-dev) | Start dependencies, then run the backend, BFF and frontend |
 | [`alinha down`](#alinha-down) | Stop the dependency containers and keep their data |
 
 ### `alinha doctor`
@@ -118,7 +118,9 @@ alinha doctor
 | `git submodule.recurse` | The setting is `true` | `warn` |
 | Frontend deps | `node_modules` exists at the repo root | `warn` |
 | Submodules | Every plugin is initialized | `fail` |
-| Ports 5432, 6379, 8180, 8200, 8080, 5173 | The port is free, or used by the dev containers | `fail` |
+| Keycloak theme | The login theme jar in `frontend/keycloak-theme/dist_keycloak` is built, or the checkout has no theme | `warn`, saying whether Maven is missing |
+| npm lockfiles | No `package-lock.json` outside `node_modules` | `warn` |
+| Ports | Each port published in the compose file, plus 8080 (backend), 8081 (BFF) and 5173 (frontend), is free or used by the dev containers | `fail` |
 | OpenBao dev secrets | `secret/alinha/app` can be read with the dev token | `warn` if OpenBao is not running, `fail` if it runs without the secrets |
 
 Each line is `ok`, `warn` or `fail`. The command exits with `1` if any check is `fail`. Warnings do not change the exit code.
@@ -158,25 +160,30 @@ A submodule that was never checked out shows `not initialized`.
 
 ### `alinha dev`
 
-Starts the full local stack and streams backend and frontend logs in one terminal.
+Starts the full local stack and streams backend, BFF and frontend logs in one terminal.
 
 ```bash
 alinha dev
+alinha dev --demo
 alinha dev --no-deps
+alinha dev --role consultant
 ```
 
 | Option | Effect |
 |---|---|
 | `--no-deps` | Skips the containers and seeding. Use it when they are already running. |
+| `--demo` | Starts the backend with `SPRING_PROFILES_ACTIVE=demo`, which adds demo organizations. |
+| `--role ROLE` | Runs only the frontend, with a fake session (`VITE_DEV_ROLE`) for `consultant`, `responsible`, `analyst` or `anonymous`. No containers, backend or BFF. Cannot be combined with `--demo`. |
 
 The command runs these steps:
 
 1. Starts every long-running service in the compose file with `docker compose up -d --wait`.
 2. Runs each one-shot service, such as `openbao-init`, with `docker compose run --rm`. This restores secrets that the in-memory OpenBao lost after a restart.
 3. Runs `./gradlew :app:bootRun` with `BAO_TOKEN=dev-app-token`, with output prefixed `[api]`.
-4. Runs `pnpm dev`, which also regenerates the plugin list, with output prefixed `[web]`.
+4. Runs `./gradlew :bff:bootRun` with `SPRING_PROFILES_ACTIVE=dev`, with output prefixed `[bff]`. Vite sends `/api`, `/oauth2` and `/auth` to it, so the login needs it. Skipped when the checkout has no `bff/build.gradle.kts`.
+5. Runs `pnpm dev`, which also regenerates the plugin list, with output prefixed `[web]`.
 
-Press Ctrl-C to stop. If either app exits, the other is stopped too. Each app gets `SIGTERM` and then `SIGKILL` after 10 seconds. The containers keep running, so the next start is faster.
+Press Ctrl-C to stop. If any app exits, the others are stopped too. Each app gets `SIGTERM` and then `SIGKILL` after 10 seconds. The containers keep running, so the next start is faster.
 
 ### `alinha down`
 
@@ -205,12 +212,14 @@ If an app exits on its own, `alinha dev` returns that app's exit code. If the ap
 **Version compatibility.** The main repo can pin the CLI versions it supports in a `.alinha-cli-version` file at its root, using a [version specifier](https://packaging.python.org/en/latest/specifications/version-specifiers/):
 
 ```text
->=0.1.0,<0.2.0
+>=0.2.0,<0.3.0
 ```
 
 If the installed CLI is outside that range, every command that needs the checkout stops and prints how to update. If the file does not exist, no check is made.
 
 **Long-running and one-shot services.** A compose service with `restart: "no"` is treated as one-shot. All other services are long-running. New services added to the compose file are picked up automatically.
+
+**Ports.** `alinha doctor` reads the host ports from each service's `ports` in the compose file. A port published on a random host port is skipped.
 
 **Readiness.** `docker compose up --wait` waits for a service's healthcheck when it has one. A service without a healthcheck counts as ready as soon as it has started.
 
@@ -279,8 +288,8 @@ To add a command, create or extend a module in `src/alinha_cli/`, keep decisions
 
    ```bash
    git switch main && git pull
-   git tag v0.2.0
-   git push origin v0.2.0
+   git tag v0.3.0
+   git push origin v0.3.0
    ```
 
 4. If the main repo needs the new version, update `.alinha-cli-version` there.
