@@ -106,21 +106,33 @@ def stop_dependencies(root: Path) -> None:
 
 
 BFF_BUILD_FILE = Path("bff/build.gradle.kts")
+# Fake sessions the shell offers under `pnpm dev` (VITE_DEV_ROLE), without the BFF.
+DEV_ROLES = ("consultant", "responsible", "analyst", "anonymous")
 
 
-def app_processes(root: Path) -> list[Proc]:
+def app_processes(root: Path, demo: bool = False) -> list[Proc]:
     """The backend, the BFF (when the checkout has one) and the frontend.
 
     In dev, Vite proxies `/api`, `/oauth2` and `/auth` to the BFF, so without it the
-    login and every API call fail.
+    login and every API call fail. `demo` turns on the backend's demo organizations.
     """
-    procs = [Proc("api", ["./gradlew", ":app:bootRun"], root, {"BAO_TOKEN": BAO_DEV_TOKEN})]
+    api_env = {"BAO_TOKEN": BAO_DEV_TOKEN}
+    if demo:
+        api_env["SPRING_PROFILES_ACTIVE"] = "demo"
+    procs = [Proc("api", ["./gradlew", ":app:bootRun"], root, api_env)]
     if (root / BFF_BUILD_FILE).is_file():
         procs.append(
             Proc("bff", ["./gradlew", ":bff:bootRun"], root, {"SPRING_PROFILES_ACTIVE": "dev"})
         )
     procs.append(Proc("web", ["pnpm", "dev"], root))
     return procs
+
+
+def frontend_processes(root: Path, role: str) -> list[Proc]:
+    """Only the frontend, with a fake session for `role`. Nothing else is needed."""
+    if role not in DEV_ROLES:
+        raise ValueError(f"unknown role {role!r}, expected one of {', '.join(DEV_ROLES)}")
+    return [Proc("web", ["pnpm", "dev"], root, {"VITE_DEV_ROLE": role})]
 
 
 def _pump(name: str, stream, emit: Emit) -> None:

@@ -93,3 +93,39 @@ def test_down_stops_dependencies(project: Path, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(cli, "stop_dependencies", stopped.append)
     assert runner.invoke(app, ["down"]).exit_code == 0
     assert stopped == [project]
+
+
+def test_dev_with_a_role_starts_only_the_frontend(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from alinha_cli import cli
+
+    started: list[list[str]] = []
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(cli, "start_dependencies", lambda _root: pytest.fail("deps started"))
+    monkeypatch.setattr(
+        cli, "supervise", lambda procs, _emit: started.append([p.name for p in procs]) or 0
+    )
+    assert runner.invoke(app, ["dev", "--role", "analyst"]).exit_code == 0
+    assert started == [["web"]]
+
+
+@pytest.mark.parametrize("args", [["--role", "admin"], ["--role", "analyst", "--demo"]])
+def test_dev_rejects_bad_role_options(
+    project: Path, monkeypatch: pytest.MonkeyPatch, args: list[str]
+) -> None:
+    from alinha_cli import cli
+
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(cli, "supervise", lambda _procs, _emit: pytest.fail("apps started"))
+    assert runner.invoke(app, ["dev", *args]).exit_code == 2
+
+
+def test_dev_passes_demo_to_the_backend(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from alinha_cli import cli
+
+    envs: list[dict] = []
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(cli, "supervise", lambda procs, _emit: envs.append(dict(procs[0].env)) or 0)
+    assert runner.invoke(app, ["dev", "--no-deps", "--demo"]).exit_code == 0
+    assert envs[0]["SPRING_PROFILES_ACTIVE"] == "demo"
